@@ -163,6 +163,45 @@ For Windows users, go to Settings > MCP > Add Server, add a new server with the 
 
 **⚠️ Only run one instance of the MCP server (either on Cursor or Claude Desktop), not both**
 
+### Antigravity Integration
+
+1. Open Antigravity
+2. Click the "**...**" dropdown at the top of the Agent panel
+3. Select **MCP Servers** → **Manage MCP Servers** → **View raw config**
+4. Add the following to your `mcp_config.json`:
+
+```json
+{
+    "mcpServers": {
+        "blender": {
+            "command": "uvx",
+            "args": [
+                "blender-mcp"
+            ]
+        }
+    }
+}
+```
+
+5. Save and click **Refresh**
+
+For Windows users, use the following configuration instead:
+
+```json
+{
+    "mcpServers": {
+        "blender": {
+            "command": "cmd",
+            "args": [
+                "/c",
+                "uvx",
+                "blender-mcp"
+            ]
+        }
+    }
+}
+```
+
 ### Visual Studio Code Integration
 
 _Prerequisites_: Make sure you have [Visual Studio Code](https://code.visualstudio.com/) installed before proceeding.
