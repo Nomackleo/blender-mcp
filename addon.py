@@ -1154,7 +1154,7 @@ class BlenderMCPServer:
                         "message": """Hyper3D Rodin integration is currently enabled, but API URL is not given. To enable it:
                                     1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
                                     2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
-                                    3. Choose the local platform and fill in the API URL
+                                    3. Choose Local API from the Rodin Mode dropdown and fill in the API URL
                                     4. Restart the connection to Claude"""
                     }
                 message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}."
@@ -1165,7 +1165,7 @@ class BlenderMCPServer:
                         "message": """Hyper3D Rodin integration is currently enabled, but API key is not given. To enable it:
                                     1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
                                     2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
-                                    3. Choose the right platform and fill in the API Key
+                                    3. Select the platform (hyper3d.ai or fal.ai) and fill in the API Key
                                     4. Restart the connection to Claude"""
                     }
                 message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}. " + \
@@ -1374,9 +1374,9 @@ class BlenderMCPServer:
 
     def create_rodin_job_local_api(
             self,
-            text_prompt: str=None,
-            images: list[tuple[str, str]]=None,
-            bbox_condition=None
+            text_prompt: str = None,
+            images: list[tuple[str, str]] = None,
+            bbox_condition = None
         ):
         try:
             base_url = bpy.context.scene.blendermcp_hyper3d_api_url.rstrip('/')
@@ -1447,7 +1447,7 @@ class BlenderMCPServer:
         except Exception as e:
             return {"error": str(e)}
 
-    def poll_rodin_job_status_local_api(self, subscription_key: str=None, request_id: str=None):
+    def poll_rodin_job_status_local_api(self, subscription_key: str = None, request_id: str = None):
         try:
             job_id = subscription_key or request_id
             if not job_id:
@@ -1690,7 +1690,7 @@ class BlenderMCPServer:
         except Exception as e:
             return {"succeed": False, "error": str(e)}
 
-    def import_generated_asset_local_api(self, name: str, task_uuid: str=None, request_id: str=None):
+    def import_generated_asset_local_api(self, name: str, task_uuid: str = None, request_id: str = None):
         job_id = task_uuid or request_id
         if not job_id:
             return {"succeed": False, "error": "Task UUID is required for local Hyper3D imports"}

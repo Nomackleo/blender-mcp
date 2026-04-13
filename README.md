@@ -227,9 +227,9 @@ Hyper3D's free trial key allows you to generate a limited number of models per d
 The Blender addon now supports three Hyper3D modes:
 - `hyper3d.ai`
 - `fal.ai`
-- `local api`
+- `Local API`
 
-For `local api`, configure the API URL in the BlenderMCP panel. The local service should expose a Hyper3D-compatible adapter:
+For `Local API`, configure the API URL in the BlenderMCP panel. The local service should expose a Hyper3D-compatible adapter:
 - `POST {API_URL}/generate` to submit a text/image generation request
 - `GET {API_URL}/status/{job_id}` to poll status when generation is asynchronous
 
