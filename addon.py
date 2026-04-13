@@ -15,7 +15,7 @@ import shutil
 import zipfile
 from bpy.props import IntProperty, BoolProperty
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib, hmac, base64
 import os.path as osp
 from contextlib import redirect_stdout, suppress
@@ -1165,7 +1165,7 @@ class BlenderMCPServer:
                         "message": """Hyper3D Rodin integration is currently enabled, but API key is not given. To enable it:
                                     1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
                                     2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
-                                    3. Select the platform (hyper3d.ai or fal.ai) and fill in the API Key
+                                    3. Select one of the hosted Rodin platforms and fill in the API Key
                                     4. Restart the connection to Claude"""
                     }
                 message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}. " + \
@@ -1438,7 +1438,7 @@ class BlenderMCPServer:
                 self._materialize_local_hyper3d_asset(job_id, response_data)
 
             return {
-                "submit_time": datetime.utcnow().isoformat(),
+                "submit_time": datetime.now(timezone.utc).isoformat(),
                 "uuid": job_id,
                 "jobs": {
                     "subscription_key": job_id,
@@ -2752,7 +2752,7 @@ def register():
         items=[
             ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
             ("FAL_AI", "fal.ai", "fal.ai"),
-            ("LOCAL_API", "Local API", "Local API"),
+            ("LOCAL_API", "Local API", "Use a local Hyper3D-compatible API service"),
         ],
         default="MAIN_SITE"
     )
