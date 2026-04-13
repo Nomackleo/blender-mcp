@@ -2752,7 +2752,7 @@ def register():
         items=[
             ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
             ("FAL_AI", "fal.ai", "fal.ai"),
-            ("LOCAL_API", "Local API", "Use a local Hyper3D-compatible API service"),
+            ("LOCAL_API", "Local API", "Use a local Hyper3D-compatible API service (requires API URL configuration)"),
         ],
         default="MAIN_SITE"
     )
