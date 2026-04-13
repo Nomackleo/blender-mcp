@@ -26,6 +26,7 @@ Give feedback, get inspired, and build on top of the MCP: [Discord](https://disc
 - Search and download Sketchfab models
 - Support for Poly Haven assets through their API
 - Support to generate 3D models using Hyper3D Rodin
+- Support local Hyper3D-compatible adapters through the Blender addon
 - Run Blender MCP on a remote host
 - Telemetry for tools executed (completely anonymous)
 
@@ -222,6 +223,21 @@ Here are some examples of what you can ask Claude to do:
 ## Hyper3D integration
 
 Hyper3D's free trial key allows you to generate a limited number of models per day. If the daily limit is reached, you can wait for the next day's reset or obtain your own key from hyper3d.ai and fal.ai.
+
+The Blender addon now supports three Hyper3D modes:
+- `hyper3d.ai`
+- `fal.ai`
+- `local api`
+
+For `local api`, configure the API URL in the BlenderMCP panel. The local service should expose a Hyper3D-compatible adapter:
+- `POST {API_URL}/generate` to submit a text/image generation request
+- `GET {API_URL}/status/{job_id}` to poll status when generation is asynchronous
+
+The local adapter can either:
+- return the generated GLB file directly from `/generate` or `/status/{job_id}`, or
+- return JSON containing a job identifier plus one of `download_url`, `model_url`, `artifact_url`, `glb_url`, `glb_base64`, `model_base64`, `artifact_base64`, or `local_file_path`
+
+The MCP tools stay the same, so MCP clients such as Antigravity can keep using the Blender MCP server without any extra client-side changes.
 
 ## Troubleshooting
 

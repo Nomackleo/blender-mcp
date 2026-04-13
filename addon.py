@@ -19,6 +19,8 @@ from datetime import datetime
 import hashlib, hmac, base64
 import os.path as osp
 from contextlib import redirect_stdout, suppress
+from urllib.parse import urljoin
+from uuid import uuid4
 
 bl_info = {
     "name": "Blender MCP",
@@ -43,6 +45,7 @@ class BlenderMCPServer:
         self.running = False
         self.socket = None
         self.server_thread = None
+        self.hyper3d_local_jobs = {}
 
     def start(self):
         if self.running:
@@ -1143,18 +1146,30 @@ class BlenderMCPServer:
         """Get the current status of Hyper3D Rodin integration"""
         enabled = bpy.context.scene.blendermcp_use_hyper3d
         if enabled:
-            if not bpy.context.scene.blendermcp_hyper3d_api_key:
-                return {
-                    "enabled": False,
-                    "message": """Hyper3D Rodin integration is currently enabled, but API key is not given. To enable it:
-                                1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
-                                2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
-                                3. Choose the right plaform and fill in the API Key
-                                4. Restart the connection to Claude"""
-                }
             mode = bpy.context.scene.blendermcp_hyper3d_mode
-            message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}. " + \
-                f"Key type: {'private' if bpy.context.scene.blendermcp_hyper3d_api_key != RODIN_FREE_TRIAL_KEY else 'free_trial'}"
+            if mode == "LOCAL_API":
+                if not bpy.context.scene.blendermcp_hyper3d_api_url:
+                    return {
+                        "enabled": False,
+                        "message": """Hyper3D Rodin integration is currently enabled, but API URL is not given. To enable it:
+                                    1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
+                                    2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
+                                    3. Choose the local platform and fill in the API URL
+                                    4. Restart the connection to Claude"""
+                    }
+                message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}."
+            else:
+                if not bpy.context.scene.blendermcp_hyper3d_api_key:
+                    return {
+                        "enabled": False,
+                        "message": """Hyper3D Rodin integration is currently enabled, but API key is not given. To enable it:
+                                    1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
+                                    2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
+                                    3. Choose the right plaform and fill in the API Key
+                                    4. Restart the connection to Claude"""
+                    }
+                message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}. " + \
+                    f"Key type: {'private' if bpy.context.scene.blendermcp_hyper3d_api_key != RODIN_FREE_TRIAL_KEY else 'free_trial'}"
             return {
                 "enabled": True,
                 "message": message
@@ -1174,6 +1189,8 @@ class BlenderMCPServer:
                 return self.create_rodin_job_main_site(*args, **kwargs)
             case "FAL_AI":
                 return self.create_rodin_job_fal_ai(*args, **kwargs)
+            case "LOCAL_API":
+                return self.create_rodin_job_local_api(*args, **kwargs)
             case _:
                 return f"Error: Unknown Hyper3D Rodin mode!"
 
@@ -1243,6 +1260,8 @@ class BlenderMCPServer:
                 return self.poll_rodin_job_status_main_site(*args, **kwargs)
             case "FAL_AI":
                 return self.poll_rodin_job_status_fal_ai(*args, **kwargs)
+            case "LOCAL_API":
+                return self.poll_rodin_job_status_local_api(*args, **kwargs)
             case _:
                 return f"Error: Unknown Hyper3D Rodin mode!"
 
@@ -1272,6 +1291,202 @@ class BlenderMCPServer:
         )
         data = response.json()
         return data
+
+    @staticmethod
+    def _read_json_response(response):
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _normalize_local_hyper3d_status(status):
+        if status is None:
+            return "Pending"
+        normalized = str(status).strip().lower()
+        if normalized in {"done", "completed", "complete", "success", "succeeded", "finished", "ready"}:
+            return "Done"
+        if normalized in {"failed", "error", "cancelled", "canceled"}:
+            return "Failed"
+        return "Pending"
+
+    @staticmethod
+    def _save_glb_bytes_to_tempfile(glb_bytes: bytes, prefix: str) -> str:
+        temp_file = tempfile.NamedTemporaryFile(delete=False, prefix=prefix, suffix=".glb")
+        try:
+            temp_file.write(glb_bytes)
+            temp_file.close()
+            return temp_file.name
+        except Exception:
+            temp_file.close()
+            os.unlink(temp_file.name)
+            raise
+
+    def _materialize_local_hyper3d_asset(self, job_id: str, response_data: dict = None):
+        job = self.hyper3d_local_jobs.setdefault(job_id, {})
+        if response_data is not None:
+            job["response_data"] = response_data
+        data = response_data or job.get("response_data") or {}
+
+        local_file_path = data.get("local_file_path") or data.get("file_path")
+        if local_file_path and os.path.exists(local_file_path):
+            job["local_file_path"] = local_file_path
+            job["status"] = "Done"
+            return
+
+        glb_base64 = data.get("glb_base64") or data.get("model_base64") or data.get("artifact_base64")
+        if glb_base64:
+            job["local_file_path"] = self._save_glb_bytes_to_tempfile(
+                base64.b64decode(glb_base64),
+                prefix=f"hyper3d_local_{job_id}_"
+            )
+            job["status"] = "Done"
+            return
+
+        download_url = data.get("download_url") or data.get("model_url") or data.get("artifact_url") or data.get("glb_url")
+        if download_url:
+            base_url = job.get("base_url", "")
+            if base_url:
+                download_url = urljoin(f"{base_url}/", str(download_url))
+            job["download_url"] = download_url
+            return
+
+    def _download_local_hyper3d_asset(self, job_id: str):
+        job = self.hyper3d_local_jobs.get(job_id)
+        if not job:
+            return {"error": "Unknown local Hyper3D job"}
+        local_file_path = job.get("local_file_path")
+        if local_file_path and os.path.exists(local_file_path):
+            return {"succeed": True, "filepath": local_file_path}
+        download_url = job.get("download_url")
+        if not download_url:
+            return {"error": "No generated asset is available yet for this local Hyper3D job"}
+
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()
+        temp_file_path = self._save_glb_bytes_to_tempfile(
+            response.content,
+            prefix=f"hyper3d_local_{job_id}_"
+        )
+        job["local_file_path"] = temp_file_path
+        job["status"] = "Done"
+        return {"succeed": True, "filepath": temp_file_path}
+
+    def create_rodin_job_local_api(
+            self,
+            text_prompt: str=None,
+            images: list[tuple[str, str]]=None,
+            bbox_condition=None
+        ):
+        try:
+            base_url = bpy.context.scene.blendermcp_hyper3d_api_url.rstrip('/')
+            if not base_url:
+                return {"error": "API URL is not given"}
+
+            if not text_prompt and not images:
+                return {"error": "Prompt or images are required"}
+
+            payload = {
+                "text_prompt": text_prompt,
+                "images": images or [],
+                "bbox_condition": bbox_condition,
+            }
+
+            response = requests.post(
+                f"{base_url}/generate",
+                json=payload,
+                timeout=180,
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Generation failed: {response.text}"}
+
+            response_data = self._read_json_response(response)
+            job_id = None
+
+            if response_data is None:
+                job_id = uuid4().hex
+                self.hyper3d_local_jobs[job_id] = {
+                    "status": "Done",
+                    "local_file_path": self._save_glb_bytes_to_tempfile(
+                        response.content,
+                        prefix=f"hyper3d_local_{job_id}_"
+                    ),
+                    "base_url": base_url,
+                }
+            else:
+                job_id = (
+                    response_data.get("task_uuid")
+                    or response_data.get("subscription_key")
+                    or response_data.get("job_id")
+                    or response_data.get("request_id")
+                    or response_data.get("id")
+                    or response_data.get("uuid")
+                    or uuid4().hex
+                )
+                self.hyper3d_local_jobs[job_id] = {
+                    "status": self._normalize_local_hyper3d_status(
+                        response_data.get("status") or response_data.get("state")
+                    ),
+                    "base_url": base_url,
+                    "status_url": urljoin(
+                        f"{base_url}/",
+                        str(response_data.get("status_url") or f"status/{job_id}")
+                    ),
+                    "response_data": response_data,
+                }
+                self._materialize_local_hyper3d_asset(job_id, response_data)
+
+            return {
+                "submit_time": datetime.utcnow().isoformat(),
+                "uuid": job_id,
+                "jobs": {
+                    "subscription_key": job_id,
+                },
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def poll_rodin_job_status_local_api(self, subscription_key: str=None, request_id: str=None):
+        try:
+            job_id = subscription_key or request_id
+            if not job_id:
+                return {"error": "Subscription key is required"}
+
+            job = self.hyper3d_local_jobs.get(job_id)
+            if not job:
+                return {"error": f"Unknown local Hyper3D job: {job_id}"}
+
+            local_file_path = job.get("local_file_path")
+            if local_file_path and os.path.exists(local_file_path):
+                return {"status_list": ["Done"]}
+
+            status_url = job.get("status_url")
+            if not status_url:
+                return {"status_list": [job.get("status", "Pending")]}
+
+            response = requests.get(status_url, timeout=60)
+            if response.status_code != 200:
+                return {"error": f"Status request failed: {response.text}"}
+
+            response_data = self._read_json_response(response)
+            if response_data is None:
+                job["local_file_path"] = self._save_glb_bytes_to_tempfile(
+                    response.content,
+                    prefix=f"hyper3d_local_{job_id}_"
+                )
+                job["status"] = "Done"
+                return {"status_list": ["Done"]}
+
+            job["status"] = self._normalize_local_hyper3d_status(
+                response_data.get("status") or response_data.get("state")
+            )
+            self._materialize_local_hyper3d_asset(job_id, response_data)
+            if job.get("local_file_path") and os.path.exists(job["local_file_path"]):
+                job["status"] = "Done"
+            return {"status_list": [job.get("status", "Pending")]}
+        except Exception as e:
+            return {"error": str(e)}
 
     @staticmethod
     def _clean_imported_glb(filepath, mesh_name=None):
@@ -1346,6 +1561,8 @@ class BlenderMCPServer:
                 return self.import_generated_asset_main_site(*args, **kwargs)
             case "FAL_AI":
                 return self.import_generated_asset_fal_ai(*args, **kwargs)
+            case "LOCAL_API":
+                return self.import_generated_asset_local_api(*args, **kwargs)
             case _:
                 return f"Error: Unknown Hyper3D Rodin mode!"
 
@@ -1453,6 +1670,40 @@ class BlenderMCPServer:
         try:
             obj = self._clean_imported_glb(
                 filepath=temp_file.name,
+                mesh_name=name
+            )
+            result = {
+                "name": obj.name,
+                "type": obj.type,
+                "location": [obj.location.x, obj.location.y, obj.location.z],
+                "rotation": [obj.rotation_euler.x, obj.rotation_euler.y, obj.rotation_euler.z],
+                "scale": [obj.scale.x, obj.scale.y, obj.scale.z],
+            }
+
+            if obj.type == "MESH":
+                bounding_box = self._get_aabb(obj)
+                result["world_bounding_box"] = bounding_box
+
+            return {
+                "succeed": True, **result
+            }
+        except Exception as e:
+            return {"succeed": False, "error": str(e)}
+
+    def import_generated_asset_local_api(self, name: str, task_uuid: str=None, request_id: str=None):
+        job_id = task_uuid or request_id
+        if not job_id:
+            return {"succeed": False, "error": "Task UUID is required for local Hyper3D imports"}
+        if job_id not in self.hyper3d_local_jobs:
+            return {"succeed": False, "error": f"Unknown local Hyper3D job: {job_id}"}
+
+        try:
+            file_result = self._download_local_hyper3d_asset(job_id)
+            if "error" in file_result:
+                return {"succeed": False, "error": file_result["error"]}
+
+            obj = self._clean_imported_glb(
+                filepath=file_result["filepath"],
                 mesh_name=name
             )
             result = {
@@ -2373,8 +2624,11 @@ class BLENDERMCP_PT_Panel(bpy.types.Panel):
         layout.prop(scene, "blendermcp_use_hyper3d", text="Use Hyper3D Rodin 3D model generation")
         if scene.blendermcp_use_hyper3d:
             layout.prop(scene, "blendermcp_hyper3d_mode", text="Rodin Mode")
-            layout.prop(scene, "blendermcp_hyper3d_api_key", text="API Key")
-            layout.operator("blendermcp.set_hyper3d_free_trial_api_key", text="Set Free Trial API Key")
+            if scene.blendermcp_hyper3d_mode == 'LOCAL_API':
+                layout.prop(scene, "blendermcp_hyper3d_api_url", text="API URL")
+            else:
+                layout.prop(scene, "blendermcp_hyper3d_api_key", text="API Key")
+                layout.operator("blendermcp.set_hyper3d_free_trial_api_key", text="Set Free Trial API Key")
 
         layout.prop(scene, "blendermcp_use_sketchfab", text="Use assets from Sketchfab")
         if scene.blendermcp_use_sketchfab:
@@ -2498,6 +2752,7 @@ def register():
         items=[
             ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
             ("FAL_AI", "fal.ai", "fal.ai"),
+            ("LOCAL_API", "local api", "local api"),
         ],
         default="MAIN_SITE"
     )
@@ -2507,6 +2762,12 @@ def register():
         subtype="PASSWORD",
         description="API Key provided by Hyper3D",
         default=""
+    )
+
+    bpy.types.Scene.blendermcp_hyper3d_api_url = bpy.props.StringProperty(
+        name="Hyper3D API URL",
+        description="URL of the local Hyper3D-compatible API service",
+        default="http://localhost:8080"
     )
 
     bpy.types.Scene.blendermcp_use_hunyuan3d = bpy.props.BoolProperty(
@@ -2617,6 +2878,7 @@ def unregister():
     del bpy.types.Scene.blendermcp_use_hyper3d
     del bpy.types.Scene.blendermcp_hyper3d_mode
     del bpy.types.Scene.blendermcp_hyper3d_api_key
+    del bpy.types.Scene.blendermcp_hyper3d_api_url
     del bpy.types.Scene.blendermcp_use_sketchfab
     del bpy.types.Scene.blendermcp_sketchfab_api_key
     del bpy.types.Scene.blendermcp_use_hunyuan3d
