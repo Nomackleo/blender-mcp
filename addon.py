@@ -2752,7 +2752,7 @@ def register():
         items=[
             ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
             ("FAL_AI", "fal.ai", "fal.ai"),
-            ("LOCAL_API", "local api", "local api"),
+            ("LOCAL_API", "Local API", "Local API"),
         ],
         default="MAIN_SITE"
     )
