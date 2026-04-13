@@ -567,7 +567,7 @@ def get_hyper3d_status(ctx: Context) -> str:
     Check if Hyper3D Rodin integration is enabled in Blender.
     Returns a message indicating whether Hyper3D Rodin features are available.
 
-    Don't emphasize the key type in the returned message, but sliently remember it.
+    Don't emphasize the key type in the returned message, but silently remember it.
     Hyper3D may be configured against the hosted APIs or a local Hyper3D-compatible adapter.
     """
     try:

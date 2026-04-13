@@ -1165,7 +1165,7 @@ class BlenderMCPServer:
                         "message": """Hyper3D Rodin integration is currently enabled, but API key is not given. To enable it:
                                     1. In the 3D Viewport, find the BlenderMCP panel in the sidebar (press N if hidden)
                                     2. Keep the 'Use Hyper3D Rodin 3D model generation' checkbox checked
-                                    3. Choose the right plaform and fill in the API Key
+                                    3. Choose the right platform and fill in the API Key
                                     4. Restart the connection to Claude"""
                     }
                 message = f"Hyper3D Rodin integration is enabled and ready to use. Mode: {mode}. " + \
